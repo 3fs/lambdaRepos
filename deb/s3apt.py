@@ -34,7 +34,8 @@ def lambda_handler(event, context):
         build_release_file(prefix)
     
         #Sign Release file
-        sign_release_file(prefix)
+        if not os.environ['GPG_KEY']=='':
+            sign_release_file(prefix)
 
 
 def get_cached_control_data(deb_obj):

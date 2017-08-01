@@ -1,4 +1,4 @@
-ZIPPED			:= aptS3.py gnupg.py debian/*
+ZIPPED			:= s3apt.py gnupg.py debian/*
 
 
 all: requires compress

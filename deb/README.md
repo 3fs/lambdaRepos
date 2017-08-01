@@ -14,23 +14,23 @@ pip install -t . -r requirements.txt
 
 Compress all needed files
 ```
-zip code.zip aptS3.py gnupg.py debian/*
+zip code.zip s3apt.py gnupg.py debian/*
 ```
 
-Presuming you already have GPG key generated export public key
+Presuming you already have GPG key generated export secret key
 ```
-gpg --export-secret-key > secret.key
+gpg -a --export-secret-key > secret.key
 ```
 
-Create new lambda function, set handler to **s3apt.lambda_handler** and the triggers to:
+Create new lambda function, set handler to **s3apt.lambda_handler**, runtime to **python 2.7** and triggers to:
 
- * Object Created, suffix 'deb'
- * Object Removed, suffix 'deb'
+ * Object Created(All), suffix 'deb'
+ * Object Removed(All), suffix 'deb'
  * If you are using certain directory as a repo, set it as prefix
 
 Upload `code.zip` to lambda function
 
-Set the environment variables
+Set the environmental variables
 
 | Key | Value |
 | --- | ---|
@@ -40,16 +40,15 @@ Set the environment variables
 | BUCKET_NAME | Bucket Name |
 | CACHE_PREFIX | Directory |
 
-**PUBLIC** Set to True for the outputs to be publicly readable
+**PUBLIC** Set to `True` for the outputs to be publicly readable
 
-**GPG_KEY** Location of your GPG private key from root of the bucket (e.g. secret/private.key)
+**GPG_KEY** Location of your GPG private key from root of the bucket (e.g. secret/private.key). Not providing this variable will cause lambda to skip GPG singing
 
-**GPG_PASS** Password of private key uploaded to GPG_KEY (Note: environental variables are/can be encripted using KMS keys)
+**GPG_PASS** Password of private key uploaded to GPG_KEY (Note: environmental variables are/can be encrypted using KMS keys)
 
 **BUCKET_NAME** Name of the bucket. Should be the same as the one selected in triggers and the one you're using for repository
 
 **CACHE_PREFIX** Path to folder for packages cache(e.g. deb/cache)
-
 
 Make folder in your S3 bucket with the same name as CACHE_PREFIX variable
 
@@ -61,7 +60,7 @@ Upload .deb file to desired folder, lambda function should now keep your reposit
 
 First time set up
 ```
-sudo echo "deb https://s3.$AWS_SERVER.amazonaws.com/$BUCKET_NAME/$PATH_TO_FOLDER_WITH_DEBIAN_FILES /" > /etc/apt/sources.list
+sudo echo "deb https://s3.$AWS_SERVER.amazonaws.com/$BUCKET_NAME/$PATH_TO_FOLDER_WITH_DEBIAN_FILES /" >> /etc/apt/sources.list
 #an example of link "https://s3.eu-central-1.amazonaws.com/testbucket/repo"
 #add public key to trusted sources - you have to export public key or use key server
 apt-key add <path to key>
@@ -78,3 +77,5 @@ sudo apt upgrade
 ## Notes
 
 .deb, Release and Package files are and should be publicly accessible for previously mentioned method of setting up apt's sources list to work, if you don't want them to be, then change PUBLIC in environment variables to False and refer to szinck's guide [here](http://webscale.plumbing/managing-apt-repos-in-s3-using-lambda)
+
+**You should change lambda timeout to 10 seconds or more to make sure that function will work**
