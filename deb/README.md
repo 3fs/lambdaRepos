@@ -16,8 +16,9 @@ Compress all needed files
 ```
 zip code.zip s3apt.py gnupg.py debian/*
 ```
+Or just use `make set` instead of `zip` and `pip` command
 
-Presuming you already have GPG key generated export secret key
+Presuming you already have GPG key generated export secret key (you can skip this part if you don't want to GPG sign your repository)
 ```
 gpg -a --export-secret-key > secret.key
 ```
@@ -77,5 +78,7 @@ sudo apt upgrade
 ## Notes
 
 .deb, Release and Package files are and should be publicly accessible for previously mentioned method of setting up apt's sources list to work, if you don't want them to be, then change PUBLIC in environment variables to False and refer to szinck's guide [here](http://webscale.plumbing/managing-apt-repos-in-s3-using-lambda)
+
+If somebody tries to inject a malicious deb file in your repo it will be automaticly added to repository. It is your job to make bucket secure enough for this not to happen.!!!
 
 **You should change lambda timeout to 10 seconds or more to make sure that function will work**
