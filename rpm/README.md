@@ -18,7 +18,7 @@ zip code.zip s3rpm.py gnupg.py pyrpm/* pyrpm/tools/*
 
 Or just use `make set` instead of `zip` and `pip3` command
 
-Presuming you already have GPG key generated export secret key(you can skip this part if you don't want to GPG sign your repository)
+Presuming you already have GPG key generated export secret key (you can skip this part if you don't want to GPG sign your repository)
 ```
 gpg -a --export-secret-key > secret.key
 ```
@@ -74,8 +74,9 @@ gpgcheck=0
 repo_gpgcheck=1
 gpgkey=<link to public key of key you used for signing metadata files>
 ```
-*You can do `repo_gpgcheck=0` to skip gpg verification when installing packages
-*You can do `gpgcheck=1` if you are uploading signed rpm packages(lambda does not sign them, it signs only metadata xml file)
+
+* You can do `repo_gpgcheck=0` to skip gpg verification when installing packages
+* You can do `gpgcheck=1` if you are uploading signed rpm packages(lambda does not sign them, it signs only metadata xml file)
 
 Install package
 ```
@@ -93,4 +94,7 @@ yum upgrade
 
 .rpm and repodata/* in repository directory are and should be publicly accessible
 
+Don't forget to increase the timeout of lambda function
+
 If somebody tries to inject a malicious rpm file in your repo it will be automaticly added to repository. It is your job to make bucket secure enough for this not to happen.!!!
+
