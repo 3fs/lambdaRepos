@@ -1,0 +1,47 @@
+NAME			:= pkgname
+URL 			:= https://InsertUrl.here
+DESC 			:= "description"
+MAINTAINER 		:= "Maintainer name"
+LICENSE 		:= "License here"
+DEPENDENCIES	:= "" #Add dependencies here and add '-d $(DEPENDENCIES)' to fpm in pkg/% block
+
+PKGDIR          := ./pkg
+VERSION         ?= $(shell cat ./VERSION)
+PACKAGE_TYPE    := deb rpm
+
+PATH_BIN ?= /usr/bin
+
+test: vet ## runs unit tests
+	go test -v ./...
+
+vet: ## examines the go code with `go vet`
+	go vet ./...
+
+$(PKGDIR): $(addprefix $(PKGDIR)/,$(PACKAGE_TYPE)) ## creates artifacts for all distributions
+
+# PACKAGING
+$(PKGDIR)/rpm: TARGET_ARTIFACT=rpm
+$(PKGDIR)/rpm: FPM_DEPENDENCIES=rpm
+$(PKGDIR)/rpm: TARGET_FILE=$(NAME)-$(VERSION)-x86_64.rpm
+$(PKGDIR)/deb: TARGET_ARTIFACT=deb
+$(PKGDIR)/deb: FPM_DEPENDENCIES=apt
+$(PKGDIR)/deb: TARGET_FILE=$(NAME)_$(VERSION)_amd64.deb
+$(PKGDIR)/%: build ## creates the artifact for a specific distribution
+	mkdir -p $(PKGDIR)/$*
+	fpm -s dir -t $(TARGET_ARTIFACT) \
+		--name $(NAME) \
+		--package ./pkg/$*/$(TARGET_FILE) \
+		--category admin \
+		--deb-compression bzip2 \
+		--url $(URL) \
+		--description $(DESC) \
+		--maintainer $(MAINTAINER) \
+		--license $(LICENSE) \
+		--version $(VERSION) \
+		--architecture amd64 \
+				./usr
+	
+# BUILD
+build: ## builds the code
+	mkdir -p .$(PATH_BIN)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -o .$(PATH_BIN)/$(NAME)

@@ -1,10 +1,10 @@
 ZIPPED			:= s3apt.py gnupg.py debian/*
 
 
-all: requires compress
+set: requires package
 
 requires:
 	pip install -t . -r requirements.txt
 	
-compress:
+package:
 	zip code.zip $(ZIPPED)

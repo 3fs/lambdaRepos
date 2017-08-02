@@ -1,0 +1,39 @@
+language: go
+
+go:
+- 1.8.3
+
+env:
+  matrix:
+  - PACKAGE_TYPE=deb
+  - PACKAGE_TYPE=rpm
+
+#install files needed for deployment
+before_install:
+- sudo apt-get -q update
+- sudo apt-get install -y make rpm ruby-dev build-essential
+
+#install fpm used for building packages
+install:
+- gem install fpm --no-document
+
+#test the code
+script:
+- make test
+
+#build the packages
+after_success:
+- make pkg/$PACKAGE_TYPE
+
+deploy:
+  provider: s3
+  access_key_id:
+    secure: <travis encrypted id key>
+  secret_access_key:
+    secure: <travis encrypted access key>
+  bucket: <bucket name>
+  local-dir: ./pkg/$PACKAGE_TYPE
+  upload-dir: $PACKAGE_TYPE
+  acl: public_read
+  skip_cleanup: true
+  region: eu-central-1
