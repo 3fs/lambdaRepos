@@ -6,7 +6,7 @@ import boto3
 import os
 import botocore
 import gnupg
-
+import json
 def lambda_handler(event, context):
     s3 = boto3.client('s3')
 
@@ -35,7 +35,6 @@ def lambda_handler(event, context):
             repo.read()
         print('Creating Metadata files')
         repo, cache = check_new_files(repo)
-
         #Check if object was removed
         if event['Records'][0]['eventName'].startswith('ObjectRemoved'):
             repo, cache = remove_pkg(repo, cache, key)
@@ -49,13 +48,13 @@ def lambda_handler(event, context):
         #save files to bucket
         s3 = boto3.resource('s3')
         for f in files:
-            g = open(repo.repodir+'repodata/'+f, 'rb').read(-1)
-            f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repodata/'+f)
-            print("Writing file: %s" % (str(f_index_obj)))
-            f_index_obj.put(Body=g, ACL=get_public())
+            with open(repo.repodir+'repodata/'+f, 'rb') as g:
+                f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repodata/'+f)
+                print("Writing file: %s" % (str(f_index_obj)))
+                f_index_obj.put(Body=g.read(-1), ACL=get_public())
         f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repo_cache')
         print("Writing file: %s" % (str(f_index_obj)))
-        f_index_obj.put(Body=str(cache))
+        f_index_obj.put(Body=str(json.dumps(cache)))
 
         print('METADATA GENERATION COMPLETED')
 
@@ -87,22 +86,25 @@ def get_public():
         acl = 'private'
     return acl
 
+def get_cache(repo):
+    #Check for cache file
+    if check_bucket_file_existance(os.environ['REPO_DIR']+'/repo_cache'):
+        print('Repodata cache (%s) found, attempting to write to it' %(os.environ['REPO_DIR']+'/repo_cache'))
+        s3 = boto3.client('s3')
+        s3.download_file(os.environ['BUCKET_NAME'], os.environ['REPO_DIR']+'/repo_cache', repo.repodir + 'repo_cache')
+        with open(repo.repodir + 'repo_cache', 'r') as f:
+            cache = json.loads(f.read(-1))
+    else:
+        print('repodata_cache file doesn\'t exist. Creating new one')
+        cache = {}
+    return cache
+
 def check_new_files(repo):
     """
     check if there are any new files in bucket
     """
-    new_rpms = []
     print("Checking for changes : %s" % (os.environ['REPO_DIR']))
-    #Check for cache file
-    if check_bucket_file_existance(os.environ['REPO_DIR']+'/repo_cache'):
-        print('Repodata cache found, attempting to write to it')
-        s3 = boto3.client('s3')
-        s3.download_file(os.environ['BUCKET_NAME'], os.environ['REPO_DIR']+'/repo_cache', repo.repodir + 'repo_cache')
-        cache = eval(open(repo.repodir + 'repo_cache', 'r').read(-1))
-    else:
-        print('repodata_cache file doesn\'t exist. Creating new one')
-        cache = {}
-
+    cache = get_cache(repo)
     s3 = boto3.resource('s3')
     #cycle through all objects ending with .rpm in REPO_DIR and check if they are already in repodata, if not add them
     for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=os.environ['REPO_DIR']):
