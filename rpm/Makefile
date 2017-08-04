@@ -12,3 +12,4 @@ compress:
 coverage:
 	coverage run s3rpm_test.py
 	coverage html
+	open htmlcov/index.html

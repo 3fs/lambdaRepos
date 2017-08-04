@@ -1,19 +1,24 @@
 import unittest
-from pyrpm.tools.createrepo import YumRepository
 from unittest.mock import MagicMock
-from unittest.mock import Mock
 from unittest.mock import mock_open
 from unittest.mock import patch
-import os
 import s3rpm
+
+from pyrpm.tools.createrepo import YumRepository
+import os
 import json
+import shutil
+import gnupg
 
 class S3AptTest(unittest.TestCase):  
+
     def setUp(self):
         os.environ['BUCKET_NAME'] = 'bucket'
         os.environ['REPO_DIR'] = 'test/repo'
         os.environ['GPG_KEY'] = ''
         os.environ['PUBLIC'] = 'True'
+        os.environ['GPG_PASS']='123'
+
 
     def test_public_private(self):
         os.environ['PUBLIC'] = 'True'
@@ -25,12 +30,14 @@ class S3AptTest(unittest.TestCase):
         os.environ['PUBLIC'] = 'False'
         assert s3rpm.get_public() == 'private'
     
+
     @patch('s3rpm.boto3')
     def test_file_existance(self, s3_mock):
         ret = s3rpm.check_bucket_file_existance('path')
         assert ret == True
         s3_mock.resource().Object.assert_called_with("bucket", "path")
         s3_mock.resource().Object().load.assert_called_with()
+
 
     @patch('s3rpm.boto3')
     @patch('s3rpm.check_bucket_file_existance')
@@ -64,6 +71,7 @@ class S3AptTest(unittest.TestCase):
         assert cache == cachenew
         self.assertEqual(len(list(reponew.packages())), 2)
     
+
     @patch('s3rpm.get_cache')
     @patch('s3rpm.boto3')
     def test_delete_files(self, s3_mock, cache_mock):
@@ -76,19 +84,43 @@ class S3AptTest(unittest.TestCase):
         assert cache == cachenew
         self.assertEqual(len(list(reponew.packages())), 0)
 
+
     @patch('s3rpm.shutil')
     @patch('s3rpm.get_cache')
     @patch('s3rpm.YumRepository')
     @patch('s3rpm.boto3')
     def test_hander(self, s3_mock, repo_mock, cache_mock, shutil_mock):
         cache_mock.return_value = {"pkgname":"ID"}
+        os.environ['REPO_DIR'] = '/test/repo/'
+
         repo_mock.return_value = YumRepository('test/repo/')   
         m = mock_open(read_data='')
         with patch('s3rpm.open', m):
             s3rpm.lambda_handler(S3_EVENT, {})
         self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 5)
+        self.assertEqual(os.environ['REPO_DIR'],'test/repo')
+        
+        check = MagicMock()
+        check.return_value = False
+        repo_mock.return_value = YumRepository('test/testrepo/')
+        with patch('s3rpm.open', m):
+            with patch('s3rpm.check_bucket_file_existance', check):
+                s3rpm.lambda_handler(S3_EVENT, {})
+        assert os.path.exists('test/testrepo/repodata/') == True
+        if os.path.exists('test/testrepo/repodata/'):
+            shutil.rmtree('test/testrepo/repodata/')
 
-    
+
+    @patch('s3rpm.gnupg')
+    @patch('s3rpm.boto3')
+    def test_gpg(self, s3_mock, gpg_mock):
+        repo = YumRepository('test/repo')
+        os.environ['GPG_KEY'] = 'test/sec.key'
+        m = mock_open()
+        with patch('s3rpm.open', m):
+            s3rpm.sign_md_file(repo)
+            gpg_mock.GPG().sign_file.assert_called_with(s3rpm.open(), binary=False, clearsign=True, detach=True, passphrase='123')
+
 S3_EVENT = {"Records":[{"s3": {"object": {"key": "test/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:Put",}]}
 if __name__ == '__main__':
     unittest.main()

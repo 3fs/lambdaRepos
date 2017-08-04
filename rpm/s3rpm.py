@@ -46,7 +46,7 @@ def lambda_handler(event, context):
 
         #sign metadata
         if not os.environ['GPG_KEY']=='':
-            sign_md_file(prefix, repo)
+            sign_md_file(repo)
 
         #save files to bucket
         s3 = boto3.resource('s3')
@@ -165,7 +165,7 @@ def remove_pkg(repo, cache, key):
         print('Tried to delete %s entry but was not found in cache' % (filename))
     return repo, cache
 
-def sign_md_file(prefix, repo):
+def sign_md_file(repo):
     '''
     Using gpg password assigned in env variable `GPG_PASS` and key, which's file directory is 
     assigned in env variable `GPG_KEY`
@@ -174,11 +174,12 @@ def sign_md_file(prefix, repo):
     s3 = boto3.client('s3')
     s3.download_file(os.environ['BUCKET_NAME'], os.environ['GPG_KEY'], '/tmp/gpgdocs/sec.key')
 
-    sec = gpg.import_keys(open('/tmp/gpgdocs/sec.key').read(-1))
+    with open('/tmp/gpgdocs/sec.key') as stream:
+        sec = gpg.import_keys(stream.read(-1))
     print("Key import returned: ")
     print(str(sec.results))
-    stream = open(repo.repodir + 'repodata/repomd.xml', 'rb')
-    signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
+    with open(repo.repodir + 'repodata/repomd.xml', 'rb') as stream:
+        signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
 
     s3 = boto3.resource('s3')
     sign_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR'] + "/repodata/repomd.xml.asc")
