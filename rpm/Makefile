@@ -8,3 +8,7 @@ requires:
 	
 compress:
 	zip code.zip $(ZIPPED)
+
+coverage:
+	coverage run s3rpm_test.py
+	coverage html

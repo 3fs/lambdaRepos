@@ -7,6 +7,7 @@ import os
 import botocore
 import gnupg
 import json
+import shutil
 def lambda_handler(event, context):
     s3 = boto3.client('s3')
 
@@ -15,6 +16,10 @@ def lambda_handler(event, context):
     repo = YumRepository('/tmp/repo/') # set repository
     prefix = '/'.join(key.split('/')[0:-1])+'/'
 
+    if os.environ['REPO_DIR'].endswith('/'):
+        os.environ['REPO_DIR'] = os.environ['REPO_DIR'][:-1]
+    if os.environ['REPO_DIR'].startswith('/'):
+        os.environ['REPO_DIR'] = os.environ['REPO_DIR'][1:]
 
     #make sure we are working with correct files
     if bucket == os.environ['BUCKET_NAME'] and key.endswith(".rpm") and prefix.startswith(os.environ['REPO_DIR']):
@@ -34,10 +39,8 @@ def lambda_handler(event, context):
                 s3.download_file(os.environ['BUCKET_NAME'], os.environ['REPO_DIR']+'/repodata/'+f, repo.repodir+'repodata/'+f)
             repo.read()
         print('Creating Metadata files')
-        repo, cache = check_new_files(repo)
+        repo, cache = check_changed_files(repo)
         #Check if object was removed
-        if event['Records'][0]['eventName'].startswith('ObjectRemoved'):
-            repo, cache = remove_pkg(repo, cache, key)
 
         repo.save()
 
@@ -55,6 +58,10 @@ def lambda_handler(event, context):
         f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repo_cache')
         print("Writing file: %s" % (str(f_index_obj)))
         f_index_obj.put(Body=str(json.dumps(cache)))
+
+        #Let us clean up
+        shutil.rmtree(repo.repodir)
+        shutil.rmtree('/tmp/gpgdocs')
 
         print('METADATA GENERATION COMPLETED')
 
@@ -87,7 +94,9 @@ def get_public():
     return acl
 
 def get_cache(repo):
-    #Check for cache file
+    """
+    Check for cache file
+    """
     if check_bucket_file_existance(os.environ['REPO_DIR']+'/repo_cache'):
         print('Repodata cache (%s) found, attempting to write to it' %(os.environ['REPO_DIR']+'/repo_cache'))
         s3 = boto3.client('s3')
@@ -99,16 +108,18 @@ def get_cache(repo):
         cache = {}
     return cache
 
-def check_new_files(repo):
+def check_changed_files(repo):
     """
-    check if there are any new files in bucket
+    check if there are any new files in bucket or any deleted files
     """
     print("Checking for changes : %s" % (os.environ['REPO_DIR']))
     cache = get_cache(repo)
     s3 = boto3.resource('s3')
+    files = []
     #cycle through all objects ending with .rpm in REPO_DIR and check if they are already in repodata, if not add them
     for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=os.environ['REPO_DIR']):
         if not obj.key.endswith(".rpm"):
+            print('skipping %s - not rpm file' %(obj.key))
             continue
         fname = obj.key[len(os.environ['REPO_DIR']):] # '/filename.rpm' - without path
         if fname not in cache:
@@ -120,27 +131,38 @@ def check_new_files(repo):
             #Download file to repodir
             path = repo.repodir + fname
             s3c.download_file(os.environ['BUCKET_NAME'], obj.key, path)
-            package = YumPackage(open(path, 'rb'))
+            with open(path, 'rb') as f:
+                package = YumPackage(f)
             #add package to repo and cache
             repo.add_package(package)
             cache[fname] = package.checksum
             print('File %s added to metadata'%(obj.key))
         else:
             print('File %s is already in metadata'%(obj.key))
+        files.append(obj.key)
+
+    removedPkgs = []
+    for f in cache:
+        if f.endswith('.rpm') and os.environ['REPO_DIR']+f not in files:
+            print('removing ' + os.environ['REPO_DIR']+f)
+            repo, _ = remove_pkg(repo, cache, f)
+            removedPkgs.append(f)
+                
+    for removed in removedPkgs:
+        del cache[removed]
     return repo, cache
 
 def remove_pkg(repo, cache, key):
     """
-    remove package from cache and metadata
+    remove package from metadata
     """
     prefix = '/'.join(key.split('/')[0:-1])
     filename = key[len(prefix):]
     if filename in cache:
         repo.remove_package(cache[filename])
-        del cache[filename]
         print('%s has been removed from metadata' % (filename))
     else:
-        print('%s entry was not found in cache' % (filename))
+        print('Tried to delete %s entry but was not found in cache' % (filename))
     return repo, cache
 
 def sign_md_file(prefix, repo):
