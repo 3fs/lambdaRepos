@@ -2,130 +2,184 @@ import unittest
 from unittest.mock import MagicMock
 from unittest.mock import mock_open
 from unittest.mock import patch
+from unittest.mock import PropertyMock
+
 import s3rpm
 
-from pyrpm.tools.createrepo import YumRepository
+import botocore
 import os
 import json
 import shutil
-import gnupg
 
-class S3AptTest(unittest.TestCase):  
+class SubFunctionsTest(unittest.TestCase):  
 
     def setUp(self):
         os.environ['BUCKET_NAME'] = 'bucket'
-        os.environ['REPO_DIR'] = 'test/repo'
+        os.environ['REPO_DIR'] = 'test_s3rpm'
         os.environ['GPG_KEY'] = ''
         os.environ['PUBLIC'] = 'True'
         os.environ['GPG_PASS']='123'
-
+    
+    def tearDown(self):
+        if os.path.exists('test_s3rpm'):
+            shutil.rmtree('test_s3rpm')
 
     def test_public_private(self):
         os.environ['PUBLIC'] = 'True'
-        assert s3rpm.get_public() == 'public-read'
+        self.assertEqual(s3rpm.get_public(), 'public-read')
 
         os.environ['PUBLIC'] = ''
-        assert s3rpm.get_public() == 'private'
+        self.assertEqual(s3rpm.get_public(), 'private')
 
         os.environ['PUBLIC'] = 'False'
-        assert s3rpm.get_public() == 'private'
+        self.assertEqual(s3rpm.get_public(), 'private')
     
 
     @patch('s3rpm.boto3')
     def test_file_existance(self, s3_mock):
         ret = s3rpm.check_bucket_file_existance('path')
-        assert ret == True
+        self.assertEqual(ret, True)
         s3_mock.resource().Object.assert_called_with("bucket", "path")
         s3_mock.resource().Object().load.assert_called_with()
 
+        #404 error
+        p = PropertyMock(side_effect=botocore.exceptions.ClientError({'Error':{'Code': '404','Message':'no msg'}}, 'aa'))
+        s3_mock.resource().Object().load = p
 
+        ret = s3rpm.check_bucket_file_existance('path')
+        self.assertEqual(ret, False)
+        #non404 error
+        p = PropertyMock(side_effect=botocore.exceptions.ClientError({'Error':{'Code': '403','Message':'no msg'}}, 'aa'))
+        s3_mock.resource().Object().load = p
+
+        with self.assertRaises(botocore.exceptions.ClientError):
+            s3rpm.check_bucket_file_existance('path')
+            
+    @patch('s3rpm.YumRepository')
     @patch('s3rpm.boto3')
     @patch('s3rpm.check_bucket_file_existance')
-    def test_cache(self, check_mock, s3_mock):
-        repo = YumRepository('test/repo/')
-        cache = '{"/pkgname":"ID"}'
+    def test_cache(self, check_mock, s3_mock, yum_mock):
+        yum_mock = MagicMock(repodir='test_s3rpm/')
+        cache = '{"pkgname" : "ID"}'
+        repo = yum_mock
         m = mock_open(read_data=cache)
         check_mock.return_value = True
 
         with patch('s3rpm.open', m):
             cachenew = s3rpm.get_cache(repo)
-        assert json.loads(cache) == cachenew
+        s3_mock.client().download_file.assert_called_with('bucket', 'test_s3rpm/repo_cache', 'test_s3rpm/repo_cache')
+        self.assertEqual(json.loads(cache), cachenew)
         
         check_mock.return_value = False
 
         cachenew = s3rpm.get_cache(repo)
-        assert cachenew == {}
+        self.assertEqual(cachenew, {})
 
-
+    @patch('s3rpm.YumRepository')
+    @patch('s3rpm.YumPackage')
     @patch('s3rpm.get_cache')
     @patch('s3rpm.boto3')
-    def test_new_files(self, s3_mock, cache_mock):
-        cache_mock.return_value = {"/pkgname-0.3.7-x86_64.rpm": "7cd368172d218ed2001ad7306ff74c727f0b1d7bfa5433d9b265e7830bf60184"}
-        repo = YumRepository('test/repo/')
-        repo.read()
-        cache = {"/pkgname-0.3.7-x86_64.rpm": "7cd368172d218ed2001ad7306ff74c727f0b1d7bfa5433d9b265e7830bf60184", "/pkgname-0.3.8-x86_64.rpm": "edcdbd077673a759585b1ebd4589d900c230a63e2c91c787861bcdcec9004707"}
+    def test_new_files(self, s3_mock, cache_mock, yump_mock, yum_mock):
+        
+        cache_mock.return_value = {"/pkgname-0.3.7-x86_64.rpm": "test_id1"}
+        yum_mock = MagicMock(repodir='test_s3rpm/')
+        repo = yum_mock
+        yump_mock.return_value = MagicMock(checksum='test_id2')
+        cache = {"/pkgname-0.3.7-x86_64.rpm": "test_id1", "/pkgname-0.3.8-x86_64.rpm": "test_id2"}
+        
 
-        s3_mock.resource().Bucket().objects.filter.return_value = [MagicMock(key='test.file'),MagicMock(key='test/repo/pkgname-0.3.8-x86_64.rpm'), MagicMock(key='test/repo/pkgname-0.3.7-x86_64.rpm')]
-        reponew, cachenew = s3rpm.check_changed_files(repo)
+        s3_mock.resource().Bucket().objects.filter.return_value = [MagicMock(key='test.file'),MagicMock(key='test_s3rpm/pkgname-0.3.8-x86_64.rpm'), MagicMock(key='test_s3rpm/pkgname-0.3.7-x86_64.rpm')]
+        m = mock_open(read_data='')
+        with patch('s3rpm.open', m):
+            reponew, cachenew = s3rpm.check_changed_files(repo)
 
-        assert cache == cachenew
-        self.assertEqual(len(list(reponew.packages())), 2)
+        self.assertEqual(cache, cachenew)
+        self.assertEqual(yum_mock.add_package.call_count, 1)
+
     
-
+    @patch('s3rpm.YumRepository')
     @patch('s3rpm.get_cache')
     @patch('s3rpm.boto3')
-    def test_delete_files(self, s3_mock, cache_mock):
-        cache_mock.return_value = {"/pkgname-0.3.7-x86_64.rpm": "7cd368172d218ed2001ad7306ff74c727f0b1d7bfa5433d9b265e7830bf60184"}
-        repo = YumRepository('test/repo/')
+    def test_delete_files(self, s3_mock, cache_mock, yum_mock):
+        cache_mock.return_value = {"/pkgname-0.3.7-x86_64.rpm": "test_id1"}
+        yum_mock = MagicMock(repodir='test_s3rpm/')
+        repo = yum_mock
         cache = {}
 
         s3_mock.resource().Bucket().objects.filter.return_value = [MagicMock(key='test.file')]
-        reponew, cachenew = s3rpm.check_changed_files(repo)
-        assert cache == cachenew
-        self.assertEqual(len(list(reponew.packages())), 0)
+        _, cachenew = s3rpm.check_changed_files(repo)
+        self.assertEqual(cache, cachenew)
+        self.assertEqual(yum_mock.remove_package.call_count, 1)
+        
+    @patch('s3rpm.YumRepository')
+    @patch('s3rpm.gnupg')
+    @patch('s3rpm.boto3')
+    def test_gpg(self, s3_mock, gpg_mock, yum_mock):
+        os.environ['GPG_KEY'] = 'KeyNowExists'
+        m = mock_open()
+        repo = yum_mock()
+        with patch('s3rpm.open', m):
+            s3rpm.sign_md_file(repo)
+            gpg_mock.GPG().sign_file.assert_called_with(s3rpm.open(), binary=False, clearsign=True, detach=True, passphrase='123')
+        s3_mock.resource().Object().put.assert_called_with(ACL='public-read', Body=str(gpg_mock.GPG().sign_file()))
+    
+    def test_create_dir(self):
+        ret = s3rpm.create_new_dir_if_not_exist('test_s3rpm/testfolder')
+        self.assertEqual(True, ret)
+        ret = s3rpm.create_new_dir_if_not_exist('test_s3rpm/testfolder')
+        self.assertEqual(False, ret)
 
 
+class HandlerTest(unittest.TestCase):
+    def setUp(self):
+        os.environ['BUCKET_NAME'] = 'bucket'
+        os.environ['REPO_DIR'] = 'test_s3rpm'
+        os.environ['GPG_KEY'] = ''
+        os.environ['PUBLIC'] = 'True'
+        os.environ['GPG_PASS']='123'
+        self.m = mock_open(read_data='')
+
+    def tearDown(self):
+        if os.path.exists('test_s3rpm'):
+            shutil.rmtree('test_s3rpm')
+    @patch('s3rpm.get_cache')
+    @patch('s3rpm.YumRepository')
+    @patch('s3rpm.boto3')
+    def test_defined_repodir(self, s3_mock, yum_mock, cache_mock, ):
+        cache_mock.return_value = {"pkgname":"ID"}
+
+        yum_mock.return_value = MagicMock(repodir='test_s3rpm/')
+        with patch('s3rpm.open', self.m):
+            s3rpm.lambda_handler(S3_EVENT, {})
+        self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 5)
+        self.assertEqual(os.environ['REPO_DIR'],'test_s3rpm')
+    
+    @patch('s3rpm.gnupg')
     @patch('s3rpm.shutil')
     @patch('s3rpm.get_cache')
     @patch('s3rpm.YumRepository')
     @patch('s3rpm.boto3')
-    def test_hander(self, s3_mock, repo_mock, cache_mock, shutil_mock):
+    def test_gpg_test(self, s3_mock, yum_mock, cache_mock, sh_mock, gpg_mock):
         cache_mock.return_value = {"pkgname":"ID"}
-        os.environ['REPO_DIR'] = '/test/repo/'
 
-        repo_mock.return_value = YumRepository('test/repo/')   
-        m = mock_open(read_data='')
-        with patch('s3rpm.open', m):
-            s3rpm.lambda_handler(S3_EVENT, {})
-        self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 5)
-        self.assertEqual(os.environ['REPO_DIR'],'test/repo')
-        
+        os.environ['GPG_KEY'] = 'KeyNowExists'
         check = MagicMock()
         check.return_value = False
-        repo_mock.return_value = YumRepository('test/testrepo/')
-        with patch('s3rpm.open', m):
+        yum_mock.return_value = MagicMock(repodir='test_s3rpm/testrepo/')
+        with patch('s3rpm.open', self.m):
             with patch('s3rpm.check_bucket_file_existance', check):
                 s3rpm.lambda_handler(S3_EVENT, {})
-        assert os.path.exists('test/testrepo/repodata/') == True
-        if os.path.exists('test/testrepo/repodata/'):
-            shutil.rmtree('test/testrepo/repodata/')
+                gpg_mock.GPG().sign_file.assert_called_with(s3rpm.open(), binary=False, clearsign=True, detach=True, passphrase='123')
+        assert os.path.exists('test_s3rpm/testrepo/') == True
 
-
-    @patch('s3rpm.gnupg')
     @patch('s3rpm.boto3')
-    def test_gpg(self, s3_mock, gpg_mock):
-        repo = YumRepository('test/repo')
-        os.environ['GPG_KEY'] = 'test/sec.key'
-        m = mock_open()
-        with patch('s3rpm.open', m):
-            s3rpm.sign_md_file(repo)
-            gpg_mock.GPG().sign_file.assert_called_with(s3rpm.open(), binary=False, clearsign=True, detach=True, passphrase='123')
-
-S3_EVENT = {"Records":[{"s3": {"object": {"key": "test/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:Put",}]}
+    def test_bad_repo_dir_and_bucket_name(self, s3_mock):
+        os.environ['REPO_DIR'] = '/test/repo/'
+        os.environ['BUCKET_NAME'] = 'iamfakebucket'
+        s3rpm.lambda_handler(S3_EVENT, {})
+        self.assertEqual(os.environ['REPO_DIR'], 'test/repo')
+        s3_mock.client.assert_called_with('s3')
+        self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 0)
+S3_EVENT = {"Records":[{"s3": {"object": {"key": "test_s3rpm/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:Put"}]}
 if __name__ == '__main__':
     unittest.main()
-
-def createrepo():
-    repo = YumRepository('test/repo/')
-    repo.add_package(YumPackage(open('test/repo/pkgname-0.3.7-x86_64.rpm', 'rb')))
-    repo.save()

@@ -1,5 +1,4 @@
 from __future__ import print_function
-from pyrpm.rpm import RPM
 from pyrpm.yum import YumPackage
 from pyrpm.tools.createrepo import YumRepository
 import boto3
@@ -29,9 +28,7 @@ def lambda_handler(event, context):
         files = ['repomd.xml', 'primary.xml.gz','filelists.xml.gz', 'other.xml.gz']
         
         #make /tmp/repodata path
-        if not os.path.exists(repo.repodir+'/repodata/'):
-            os.makedirs(repo.repodir+'/repodata/')
-
+        create_new_dir_if_not_exist(repo.repodir+'/repodata/')
         # if repodata files exist download them to /tmp where we can manipulate with them
         if exists: 
             print('repodata already exists, old files will be overwriten')
@@ -61,11 +58,23 @@ def lambda_handler(event, context):
 
         #Let us clean up
         shutil.rmtree(repo.repodir)
-        shutil.rmtree('/tmp/gpgdocs')
+        if os.path.exists('/tmp/gpgdocs'):
+            shutil.rmtree('/tmp/gpgdocs')
 
         print('METADATA GENERATION COMPLETED')
 
+def create_new_dir_if_not_exist(path):
+    """
+    Creates dir at 'path' if it does not exist
 
+    returns true on success
+    returns false if dir already exists
+    """
+    if not os.path.exists(path):
+        os.makedirs(path)
+        return True
+    else:
+        return False
 def check_bucket_file_existance(path):
     """
     checks if file exsist in bucket
@@ -85,7 +94,7 @@ def check_bucket_file_existance(path):
 
 def get_public():
     """
-    If env variable PUBLIC is set to true returns 'public read'
+    If env variable PUBLIC is set to true returns 'public-read', else returns 'private'
     """
     if os.environ['PUBLIC'] == 'True' :
         acl = 'public-read'
@@ -118,6 +127,7 @@ def check_changed_files(repo):
     files = []
     #cycle through all objects ending with .rpm in REPO_DIR and check if they are already in repodata, if not add them
     for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=os.environ['REPO_DIR']):
+        files.append(obj.key)
         if not obj.key.endswith(".rpm"):
             print('skipping %s - not rpm file' %(obj.key))
             continue
@@ -126,8 +136,7 @@ def check_changed_files(repo):
             s3c = boto3.client('s3')
             #Create path to folder where to download file, if it not yet exists
             prefix = '/'.join(obj.key.split('/')[0:-1])[len(os.environ['REPO_DIR']):]
-            if not os.path.exists(repo.repodir+prefix):
-                os.makedirs(repo.repodir+prefix)
+            create_new_dir_if_not_exist(repo.repodir+prefix)
             #Download file to repodir
             path = repo.repodir + fname
             s3c.download_file(os.environ['BUCKET_NAME'], obj.key, path)
@@ -139,15 +148,14 @@ def check_changed_files(repo):
             print('File %s added to metadata'%(obj.key))
         else:
             print('File %s is already in metadata'%(obj.key))
-        files.append(obj.key)
 
     removedPkgs = []
     for f in cache:
         if f.endswith('.rpm') and os.environ['REPO_DIR']+f not in files:
-            print('removing ' + os.environ['REPO_DIR']+f)
-            repo, _ = remove_pkg(repo, cache, f)
+            print('removing ' +f)
+            repo = remove_pkg(repo, cache, f)
             removedPkgs.append(f)
-                
+
     for removed in removedPkgs:
         del cache[removed]
     return repo, cache
@@ -163,7 +171,7 @@ def remove_pkg(repo, cache, key):
         print('%s has been removed from metadata' % (filename))
     else:
         print('Tried to delete %s entry but was not found in cache' % (filename))
-    return repo, cache
+    return repo
 
 def sign_md_file(repo):
     '''
