@@ -1,9 +1,9 @@
-NAME			:= pkgname
-URL 			:= https://InsertUrl.here
-DESC 			:= "description"
-MAINTAINER 		:= "Maintainer name"
-LICENSE 		:= "License here"
-DEPENDENCIES	:= "" #Add dependencies here and add '-d $(DEPENDENCIES)' to fpm in pkg/% block
+NAME         = pkgname
+URL          = https://InsertUrl.here
+DESC         = "description"
+MAINTAINER   = "Maintainer name"
+LICENSE      = "License here"
+DEPENDENCIES = "" #Add dependencies here and add '-d $(DEPENDENCIES)' to fpm in pkg/% block
 
 PKGDIR          := ./pkg
 VERSION         ?= $(shell cat ./VERSION)

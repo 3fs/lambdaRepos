@@ -34,7 +34,7 @@ def lambda_handler(event, context):
         build_release_file(prefix)
     
         #Sign Release file
-        if not os.environ['GPG_KEY']=='':
+        if os.environ['GPG_KEY']!='':
             sign_release_file(prefix)
 
 
@@ -223,24 +223,36 @@ def get_package_index_hash(prefix):
 def build_release_file(prefix):
     """
     gets info from Package, get the sums and puts them into file
+
+    Releasefile layout:
+    '''
+    Date: <Day of the week>, DD Mmm YYYY HH:MM:SS UTC
+    MD5sum:
+    <md5sum>  <(17 - length of size) spaces> <size> Packages
+    SHA1:
+    <sha1>  <(17 - length of size) spaces> <size> Packages
+    SHA256:
+    <sha256>  <(17 - length of size) spaces> <size> Packages
+    '''
     """
     s3 = boto3.client('s3')
     release_file = ""
     s3.download_file(os.environ['BUCKET_NAME'], prefix + "Packages", '/tmp/Packages')
     md5, sha1, sha256 = checksums("/tmp/Packages")
 
-    time = 'Date: ' + strftime("%a, %d %b %Y %X UTC", gmtime())
+    date = 'Date: ' + strftime("%a, %d %b %Y %X UTC", gmtime())
     stat = os.stat("/tmp/Packages")
-    release_file = release_file +(time + '\nMD5sum:\n ' + md5)
+
+    release_file += (date + '\nMD5sum:\n ' + md5)
     for i in range(0,17-len(str(stat.st_size))):
-        release_file = release_file +(' ')
-    release_file = release_file +(str(stat.st_size) + ' Packages\nSHA1:\n '+sha1 )
+        release_file +=(' ')
+    release_file +=("%d Packages\nSHA1:\n %s" %(stat.st_size, sha1))
     for i in range(0,17-len(str(stat.st_size))):
-        release_file = release_file +(' ')
-    release_file = release_file +(str(stat.st_size) + ' Packages\nSHA256:\n '+sha256 )
+        release_file +=(' ')
+    release_file +=("%d Packages\nSHA256:\n %s" %(stat.st_size, sha256 ))
     for i in range(0,17-len(str(stat.st_size))):
-        release_file = release_file +(' ')
-    release_file = release_file +(str(stat.st_size) + ' Packages')
+        release_file +=(' ')
+    release_file +=('%d Packages' % stat.st_size)
 
     s3 = boto3.resource('s3')
 

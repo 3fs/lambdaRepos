@@ -12,4 +12,4 @@ Both folders contain more detailed info on setting up S3 bucket and lambda funct
 
 It is possible to automate deployment of packages by combining this repository with Travis CI.
 
-Examples of `.travis.yml` and `Makefile` used for autamatic deployment of go project can be found in repository
+Examples of `.travis.yml` and `Makefile` used for automatic deployment of go project can be found in repository
