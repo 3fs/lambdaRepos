@@ -15,16 +15,13 @@ def lambda_handler(event, context):
     repo = YumRepository('/tmp/repo/') # set repository
     prefix = '/'.join(key.split('/')[0:-1])+'/'
 
-    if os.environ['REPO_DIR'].endswith('/'):
-        os.environ['REPO_DIR'] = os.environ['REPO_DIR'][:-1]
-    if os.environ['REPO_DIR'].startswith('/'):
-        os.environ['REPO_DIR'] = os.environ['REPO_DIR'][1:]
+    s3_repo_dir = os.environ['REPO_DIR'].strip('/')
 
     #make sure we are working with correct files
-    if bucket == os.environ['BUCKET_NAME'] and key.endswith(".rpm") and prefix.startswith(os.environ['REPO_DIR']):
+    if bucket == os.environ['BUCKET_NAME'] and key.endswith(".rpm") and prefix.startswith(s3_repo_dir):
         #check if repodata already exist, if not create new with key file
         print('Bucket and key\'s file accepted')
-        exists = check_bucket_file_existance(os.environ['REPO_DIR']+'/repodata/repomd.xml')
+        exists = check_bucket_file_existance(s3_repo_dir+'/repodata/repomd.xml')
         files = ['repomd.xml', 'primary.xml.gz','filelists.xml.gz', 'other.xml.gz']
         
         #make /tmp/repodata path
@@ -33,26 +30,26 @@ def lambda_handler(event, context):
         if exists: 
             print('repodata already exists, old files will be overwriten')
             for f in files:
-                s3.download_file(os.environ['BUCKET_NAME'], os.environ['REPO_DIR']+'/repodata/'+f, repo.repodir+'repodata/'+f)
+                s3.download_file(os.environ['BUCKET_NAME'], s3_repo_dir+'/repodata/'+f, repo.repodir+'repodata/'+f)
             repo.read()
         print('Creating Metadata files')
-        repo, cache = check_changed_files(repo)
+        repo, cache = check_changed_files(repo, s3_repo_dir)
         #Check if object was removed
 
         repo.save()
 
         #sign metadata
         if not os.environ['GPG_KEY']=='':
-            sign_md_file(repo)
+            sign_md_file(repo, s3_repo_dir)
 
         #save files to bucket
         s3 = boto3.resource('s3')
         for f in files:
             with open(repo.repodir+'repodata/'+f, 'rb') as g:
-                f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repodata/'+f)
+                f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repodata/'+f)
                 print("Writing file: %s" % (str(f_index_obj)))
                 f_index_obj.put(Body=g.read(-1), ACL=get_public())
-        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR']+'/repo_cache')
+        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
         print("Writing file: %s" % (str(f_index_obj)))
         f_index_obj.put(Body=str(json.dumps(cache)))
 
@@ -102,14 +99,14 @@ def get_public():
         acl = 'private'
     return acl
 
-def get_cache(repo):
+def get_cache(repo, s3_repo_dir):
     """
     Check for cache file
     """
-    if check_bucket_file_existance(os.environ['REPO_DIR']+'/repo_cache'):
-        print('Repodata cache (%s) found, attempting to write to it' %(os.environ['REPO_DIR']+'/repo_cache'))
+    if check_bucket_file_existance(s3_repo_dir+'/repo_cache'):
+        print('Repodata cache (%s) found, attempting to write to it' %(s3_repo_dir+'/repo_cache'))
         s3 = boto3.client('s3')
-        s3.download_file(os.environ['BUCKET_NAME'], os.environ['REPO_DIR']+'/repo_cache', repo.repodir + 'repo_cache')
+        s3.download_file(os.environ['BUCKET_NAME'], s3_repo_dir+'/repo_cache', repo.repodir + 'repo_cache')
         with open(repo.repodir + 'repo_cache', 'r') as f:
             cache = json.loads(f.read(-1))
     else:
@@ -117,25 +114,25 @@ def get_cache(repo):
         cache = {}
     return cache
 
-def check_changed_files(repo):
+def check_changed_files(repo, s3_repo_dir):
     """
     check if there are any new files in bucket or any deleted files
     """
-    print("Checking for changes : %s" % (os.environ['REPO_DIR']))
-    cache = get_cache(repo)
+    print("Checking for changes : %s" % (s3_repo_dir))
+    cache = get_cache(repo, s3_repo_dir)
     s3 = boto3.resource('s3')
     files = []
     #cycle through all objects ending with .rpm in REPO_DIR and check if they are already in repodata, if not add them
-    for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=os.environ['REPO_DIR']):
+    for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=s3_repo_dir):
         files.append(obj.key)
         if not obj.key.endswith(".rpm"):
             print('skipping %s - not rpm file' %(obj.key))
             continue
-        fname = obj.key[len(os.environ['REPO_DIR']):] # '/filename.rpm' - without path
+        fname = obj.key[len(s3_repo_dir):] # '/filename.rpm' - without path
         if fname not in cache:
             s3c = boto3.client('s3')
             #Create path to folder where to download file, if it not yet exists
-            prefix = '/'.join(obj.key.split('/')[0:-1])[len(os.environ['REPO_DIR']):]
+            prefix = '/'.join(obj.key.split('/')[0:-1])[len(s3_repo_dir):]
             create_new_dir_if_not_exist(repo.repodir+prefix)
             #Download file to repodir
             path = repo.repodir + fname
@@ -151,7 +148,7 @@ def check_changed_files(repo):
 
     removedPkgs = []
     for f in cache:
-        if f.endswith('.rpm') and os.environ['REPO_DIR']+f not in files:
+        if f.endswith('.rpm') and s3_repo_dir+f not in files:
             print('removing ' +f)
             repo = remove_pkg(repo, cache, f)
             removedPkgs.append(f)
@@ -173,7 +170,7 @@ def remove_pkg(repo, cache, key):
         print('Tried to delete %s entry but was not found in cache' % (filename))
     return repo
 
-def sign_md_file(repo):
+def sign_md_file(repo, s3_repo_dir):
     '''
     Using gpg password assigned in env variable `GPG_PASS` and key, which's file directory is 
     assigned in env variable `GPG_KEY`
@@ -190,6 +187,6 @@ def sign_md_file(repo):
         signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
 
     s3 = boto3.resource('s3')
-    sign_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['REPO_DIR'] + "/repodata/repomd.xml.asc")
+    sign_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir + "/repodata/repomd.xml.asc")
     print('uploading repomd.xml.asc to /repodata')
     sign_obj.put(Body=str(signed), ACL=get_public())

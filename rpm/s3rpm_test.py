@@ -66,13 +66,13 @@ class SubFunctionsTest(unittest.TestCase):
         check_mock.return_value = True
 
         with patch('s3rpm.open', m):
-            cachenew = s3rpm.get_cache(repo)
+            cachenew = s3rpm.get_cache(repo, os.environ['REPO_DIR'])
         s3_mock.client().download_file.assert_called_with('bucket', 'test_s3rpm/repo_cache', 'test_s3rpm/repo_cache')
         self.assertEqual(json.loads(cache), cachenew)
         
         check_mock.return_value = False
 
-        cachenew = s3rpm.get_cache(repo)
+        cachenew = s3rpm.get_cache(repo,os.environ['REPO_DIR'])
         self.assertEqual(cachenew, {})
 
     @patch('s3rpm.YumRepository')
@@ -91,7 +91,7 @@ class SubFunctionsTest(unittest.TestCase):
         s3_mock.resource().Bucket().objects.filter.return_value = [MagicMock(key='test.file'),MagicMock(key='test_s3rpm/pkgname-0.3.8-x86_64.rpm'), MagicMock(key='test_s3rpm/pkgname-0.3.7-x86_64.rpm')]
         m = mock_open(read_data='')
         with patch('s3rpm.open', m):
-            reponew, cachenew = s3rpm.check_changed_files(repo)
+            reponew, cachenew = s3rpm.check_changed_files(repo, os.environ['REPO_DIR'])
 
         self.assertEqual(cache, cachenew)
         self.assertEqual(yum_mock.add_package.call_count, 1)
@@ -107,7 +107,7 @@ class SubFunctionsTest(unittest.TestCase):
         cache = {}
 
         s3_mock.resource().Bucket().objects.filter.return_value = [MagicMock(key='test.file')]
-        _, cachenew = s3rpm.check_changed_files(repo)
+        _, cachenew = s3rpm.check_changed_files(repo, os.environ['REPO_DIR'])
         self.assertEqual(cache, cachenew)
         self.assertEqual(yum_mock.remove_package.call_count, 1)
         
@@ -119,7 +119,7 @@ class SubFunctionsTest(unittest.TestCase):
         m = mock_open()
         repo = yum_mock()
         with patch('s3rpm.open', m):
-            s3rpm.sign_md_file(repo)
+            s3rpm.sign_md_file(repo, os.environ['REPO_DIR'])
             gpg_mock.GPG().sign_file.assert_called_with(s3rpm.open(), binary=False, clearsign=True, detach=True, passphrase='123')
         s3_mock.resource().Object().put.assert_called_with(ACL='public-read', Body=str(gpg_mock.GPG().sign_file()))
     
@@ -159,7 +159,7 @@ class HandlerTest(unittest.TestCase):
     @patch('s3rpm.get_cache')
     @patch('s3rpm.YumRepository')
     @patch('s3rpm.boto3')
-    def test_gpg_test(self, s3_mock, yum_mock, cache_mock, sh_mock, gpg_mock):
+    def test_gpg_from_handler(self, s3_mock, yum_mock, cache_mock, sh_mock, gpg_mock):
         cache_mock.return_value = {"pkgname":"ID"}
 
         os.environ['GPG_KEY'] = 'KeyNowExists'
@@ -173,11 +173,9 @@ class HandlerTest(unittest.TestCase):
         assert os.path.exists('test_s3rpm/testrepo/') == True
 
     @patch('s3rpm.boto3')
-    def test_bad_repo_dir_and_bucket_name(self, s3_mock):
-        os.environ['REPO_DIR'] = '/test/repo/'
+    def test_bad_bucket_name(self, s3_mock):
         os.environ['BUCKET_NAME'] = 'iamfakebucket'
         s3rpm.lambda_handler(S3_EVENT, {})
-        self.assertEqual(os.environ['REPO_DIR'], 'test/repo')
         s3_mock.client.assert_called_with('s3')
         self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 0)
 S3_EVENT = {"Records":[{"s3": {"object": {"key": "test_s3rpm/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:Put"}]}

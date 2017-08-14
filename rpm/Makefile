@@ -1,10 +1,19 @@
-ZIPPED			:= s3rpm.py gnupg.py pyrpm/* pyrpm/tools/*
+ZIPPED_FILES := s3rpm.py gnupg.py # files to compress in root of zip
+ZIPPED_DIRS  := pyrpm # folders to compress to zip
+all: requires test package
 
+help: ## displays this message
+	@grep -E '^[a-zA-Z_/%\-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-set: requires package
+requires: ## installs required packages
+	pip3 install -t . -r requirements.txt
 
-requires:
-	pip3 install -t . -r requirements.txt --upgrade
-	
-package:
-	zip code.zip $(ZIPPED)
+package: ## creates zip of code
+	zip code.zip $(ZIPPED_FILES)
+	zip -r code.zip $(ZIPPED_DIRS)
+
+clean: ## cleans up the repository
+	/bin/rm -rf code.zip
+
+test: ## runs the tests
+	python3.6 s3rpm_test.py
