@@ -50,7 +50,7 @@ Here is a minimal requirement for the policy that is included in role:
 ```
 {"Version": "2012-10-17",
     "Statement": [
-        {"Sid": "<THIS IS UNIQE>",
+        {"Sid": "<THIS IS UNIQUE>",
             "Action": [
                 "s3:GetObject",
                 "s3:PutObject",
@@ -68,7 +68,7 @@ These are the environmental variables you will have to set:
 | GPG_KEY | File |
 | GPG_PASS | GPG key password |
 | BUCKET_NAME | Bucket Name |
-| CACHE_PREFIX | Directory |
+| CACHE | Directory |
 
 **PUBLIC** Set to `True` for the outputs to be publicly readable
 
@@ -78,7 +78,7 @@ These are the environmental variables you will have to set:
 
 **BUCKET_NAME** Name of the bucket. Should be the same as the one selected in triggers and the one you're using for repository
 
-**CACHE_PREFIX** Path to folder for packages cache(e.g. deb/cache)
+**CACHE** Path to folder for packages cache(e.g. deb/cache)
 
 ### Set up lambda with CLI
 
@@ -93,7 +93,7 @@ aws lambda create-function \
     --handler s3apt.lambda_handler \
     --runtime python2.7 \
 # Replace '<...>' with environmental variables
-    --environment Variables='{PUBLIC=<bool>, GPG_KEY=<file>, GPG_PASS=<password>, BUCKET_NAME=<bucket name>, CACHE_PREFIX=<dir>}'
+    --environment Variables='{PUBLIC=<bool>, GPG_KEY=<file>, GPG_PASS=<password>, BUCKET_NAME=<bucket name>, CACHE=<dir>}'
 ```
 
 ### Set up lambda manually
@@ -111,7 +111,7 @@ Upload `code.zip` to lambda function
  * If you are using certain directory as a repo, set it as prefix
 
 ### Set up S3
-Make folder in your S3 bucket with the same name as CACHE_PREFIX variable
+Make folder in your S3 bucket with the same name as CACHE variable
 
 Upload secret key file to location you specified as GPG_KEY
 

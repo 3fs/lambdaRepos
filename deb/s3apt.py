@@ -43,7 +43,7 @@ def get_cached_control_data(deb_obj):
     s3 = boto3.resource('s3')
     etag = deb_obj.e_tag.strip('"')
 
-    cache_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['CACHE_PREFIX'] + '/' + etag)
+    cache_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['CACHE'] + '/' + etag)
     exists = True
     try:
         control_data = cache_obj.get()['Body'].read()
