@@ -275,17 +275,21 @@ def sign_release_file(prefix):
     s3.download_file(os.environ['BUCKET_NAME'], os.environ['GPG_KEY'], '/tmp/gpgdocs/sec.key')
     s3.download_file(os.environ['BUCKET_NAME'], prefix + 'Release', '/tmp/gpgdocs/Release')
 
-    sec = gpg.import_keys(open('/tmp/gpgdocs/sec.key').read(-1))
+    with open('/tmp/gpgdocs/sec.key') as stream:
+        sec = gpg.import_keys(stream.read(-1))
     print("Key import returned: ")
     print(sec.results)
-    stream = open('/tmp/gpgdocs/Release')
-    signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
+    with open('/tmp/gpgdocs/Release') as stream:
+        # do not call passphrase=.. if password is not set as it causes bad sign
+        if os.environ['GPG_PASS'] == '':
+            signed = gpg.sign_file(stream, clearsign=True, detach=True, binary=False)
+        else:
+            signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
 
     if os.environ['PUBLIC'] == 'True' :
         acl = 'public-read'
     else:
         acl = 'private'
     s3 = boto3.resource('s3')
-    print(signed)
     sign_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=prefix + "Release.gpg")
     sign_obj.put(Body=str(signed), ACL=acl)
