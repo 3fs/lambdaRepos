@@ -93,7 +93,7 @@ aws lambda create-function \
     --function-name <name the function> \
     --zip-file fileb://code.zip \
     --role <role's arn> \    # arn from role with S3 read/write access
-    --handler s3rpm.handler \
+    --handler s3rpm.lambda_handler \
     --runtime python3.6 \
 # Replace '<...>' with environmental variables
     --environment Variables='{PUBLIC=<bool>, GPG_KEY=<file>, GPG_PASS=<password>, BUCKET_NAME=<bucket name>, REPO_DIR=<dir>}'

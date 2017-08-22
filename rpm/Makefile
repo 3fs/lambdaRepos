@@ -13,7 +13,8 @@ package: ## creates zip of code
 	zip -r code.zip $(ZIPPED_DIRS)
 
 clean: ## cleans up the repository
-	/bin/rm -rf code.zip
+	/bin/rm -rf code.zip __pycache__ boto3* botocore* concurrent* docutils* dateutil* six* futures* pyrpm* tests* jmespath* python_gnupg* python_dateutil* six.py gnupg.py gnupg.pyc
+
 
 test: ## runs the tests
 	python3.6 s3rpm_test.py

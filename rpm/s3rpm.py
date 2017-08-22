@@ -184,7 +184,12 @@ def sign_md_file(repo, s3_repo_dir):
     print("Key import returned: ")
     print(str(sec.results))
     with open(repo.repodir + 'repodata/repomd.xml', 'rb') as stream:
-        signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
+        # If gpgkey has no password set, leaving GPG_PASS empty caues badsign,
+        # that is why we are not calling passphrase in gpg.sign_file
+        if os.environ['GPG_PASS'] == '':
+            signed = gpg.sign_file(stream, clearsign=True, detach=True, binary=False)
+        else:
+            signed = gpg.sign_file(stream, passphrase=os.environ['GPG_PASS'], clearsign=True, detach=True, binary=False)
 
     s3 = boto3.resource('s3')
     sign_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir + "/repodata/repomd.xml.asc")
