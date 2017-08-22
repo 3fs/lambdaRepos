@@ -33,8 +33,15 @@ def lambda_handler(event, context):
                 s3.download_file(os.environ['BUCKET_NAME'], s3_repo_dir+'/repodata/'+f, repo.repodir+'repodata/'+f)
             repo.read()
         print('Creating Metadata files')
-        repo, cache = check_changed_files(repo, s3_repo_dir)
-        #Check if object was removed
+        if event['Records'][0]['eventName'].startswith('ObjectCreated'):
+            repo, cache = check_changed_files(repo, s3_repo_dir, newfile=event['Records'][0]['s3']['object']['key'])
+        else:
+            repo, cache = check_changed_files(repo, s3_repo_dir)
+        #save cache to bucket
+        s3 = boto3.resource('s3')
+        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
+        print("Writing file: %s" % (str(f_index_obj)))
+        f_index_obj.put(Body=str(json.dumps(cache)))
 
         repo.save()
 
@@ -43,15 +50,11 @@ def lambda_handler(event, context):
             sign_md_file(repo, s3_repo_dir)
 
         #save files to bucket
-        s3 = boto3.resource('s3')
         for f in files:
             with open(repo.repodir+'repodata/'+f, 'rb') as g:
                 f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repodata/'+f)
                 print("Writing file: %s" % (str(f_index_obj)))
                 f_index_obj.put(Body=g.read(-1), ACL=get_public())
-        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
-        print("Writing file: %s" % (str(f_index_obj)))
-        f_index_obj.put(Body=str(json.dumps(cache)))
 
         #Let us clean up
         shutil.rmtree(repo.repodir)
@@ -114,7 +117,25 @@ def get_cache(repo, s3_repo_dir):
         cache = {}
     return cache
 
-def check_changed_files(repo, s3_repo_dir):
+def remove_overwritten_file_from_cache(cache, newfile, s3_repo_dir, repo):
+    """
+    remove pkg from metadata and repo
+    """
+    fname = newfile[len(s3_repo_dir):] # '/filename.rpm' - without path
+    print('file %s has been overwritten and will be removed from md and repo' % (fname))
+    pkg_id = cache[fname]
+    del cache[fname]
+    
+    # save cache in case new event occurs
+    s3 = boto3.resource('s3')
+    f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
+    f_index_obj.put(Body=str(json.dumps(cache)))
+
+    repo.remove_package(pkg_id)    
+    return cache
+
+
+def check_changed_files(repo, s3_repo_dir,newfile=None):
     """
     check if there are any new files in bucket or any deleted files
     """
@@ -122,6 +143,9 @@ def check_changed_files(repo, s3_repo_dir):
     cache = get_cache(repo, s3_repo_dir)
     s3 = boto3.resource('s3')
     files = []
+    #if file was overwriten and is in repocache then remove it from cache, so next for loop will add back the new
+    if newfile != None and newfile[len(s3_repo_dir):] in cache:
+        cache = remove_overwritten_file_from_cache(cache, newfile, s3_repo_dir, repo)
     #cycle through all objects ending with .rpm in REPO_DIR and check if they are already in repodata, if not add them
     for obj in s3.Bucket(os.environ['BUCKET_NAME']).objects.filter(Prefix=s3_repo_dir):
         files.append(obj.key)

@@ -145,7 +145,7 @@ class HandlerTest(unittest.TestCase):
     @patch('s3rpm.get_cache')
     @patch('s3rpm.YumRepository')
     @patch('s3rpm.boto3')
-    def test_defined_repodir(self, s3_mock, yum_mock, cache_mock, ):
+    def test_defined_repodir(self, s3_mock, yum_mock, cache_mock):
         cache_mock.return_value = {"pkgname":"ID"}
 
         yum_mock.return_value = MagicMock(repodir='test_s3rpm/')
@@ -178,6 +178,6 @@ class HandlerTest(unittest.TestCase):
         s3rpm.lambda_handler(S3_EVENT, {})
         s3_mock.client.assert_called_with('s3')
         self.assertEqual(len(s3_mock.resource().Object().put.mock_calls), 0)
-S3_EVENT = {"Records":[{"s3": {"object": {"key": "test_s3rpm/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:Put"}]}
+S3_EVENT = {"Records":[{"s3": {"object": {"key": "test_s3rpm/repo/pkgname-0.3.8-x86_64.rpm",},"bucket": {"name": "bucket",},},"eventName": "ObjectCreated:*"}]}
 if __name__ == '__main__':
     unittest.main()
