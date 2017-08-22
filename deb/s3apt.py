@@ -160,14 +160,6 @@ def rebuild_package_index(prefix):
         print("NOT BUILDING EMPTY PACKAGE INDEX")
         return
 
-    # See if we need to rebuild the package index
-    metadata_pkghash = get_package_index_hash(prefix)
-    calcd_pkghash = calc_package_index_hash(deb_names)
-    print("calcd_pkghash=%s, metadata_pkghash=%s" % (calcd_pkghash, metadata_pkghash))
-    if metadata_pkghash == calcd_pkghash:
-        print("PACKAGE INDEX ALREADY UP TO DATE")
-        return
-
     pkginfos = []
     for obj in deb_objs:
         print(obj.key)
@@ -187,7 +179,7 @@ def rebuild_package_index(prefix):
         acl = 'public-read'
     else:
         acl = 'private'
-    package_index_obj.put(Body="\n".join(sorted(pkginfos)), Metadata={'packages-hash': calcd_pkghash}, ACL=acl)
+    package_index_obj.put(Body="\n".join(sorted(pkginfos)), ACL=acl)
 
     print("DONE REBUILDING PACKAGE INDEX")
 
