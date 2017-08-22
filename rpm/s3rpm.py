@@ -16,7 +16,7 @@ def lambda_handler(event, context):
     prefix = '/'.join(key.split('/')[0:-1])+'/'
 
     s3_repo_dir = os.environ['REPO_DIR'].strip('/')
-
+    
     #make sure we are working with correct files
     if bucket == os.environ['BUCKET_NAME'] and key.endswith(".rpm") and prefix.startswith(s3_repo_dir):
         #check if repodata already exist, if not create new with key file
@@ -39,7 +39,7 @@ def lambda_handler(event, context):
             repo, cache = check_changed_files(repo, s3_repo_dir)
         #save cache to bucket
         s3 = boto3.resource('s3')
-        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
+        f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['CACHE']+'/repo_cache')
         print("Writing file: %s" % (str(f_index_obj)))
         f_index_obj.put(Body=str(json.dumps(cache)))
 
@@ -106,10 +106,10 @@ def get_cache(repo, s3_repo_dir):
     """
     Check for cache file
     """
-    if check_bucket_file_existance(s3_repo_dir+'/repo_cache'):
-        print('Repodata cache (%s) found, attempting to write to it' %(s3_repo_dir+'/repo_cache'))
+    if check_bucket_file_existance(os.environ['CACHE']+'/repo_cache'):
+        print('Repodata cache (%s) found, attempting to write to it' %(os.environ['CACHE']+'/repo_cache'))
         s3 = boto3.client('s3')
-        s3.download_file(os.environ['BUCKET_NAME'], s3_repo_dir+'/repo_cache', repo.repodir + 'repo_cache')
+        s3.download_file(os.environ['BUCKET_NAME'], os.environ['CACHE']+'/repo_cache', repo.repodir + 'repo_cache')
         with open(repo.repodir + 'repo_cache', 'r') as f:
             cache = json.loads(f.read(-1))
     else:
@@ -128,7 +128,7 @@ def remove_overwritten_file_from_cache(cache, newfile, s3_repo_dir, repo):
     
     # save cache in case new event occurs
     s3 = boto3.resource('s3')
-    f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=s3_repo_dir+'/repo_cache')
+    f_index_obj = s3.Object(bucket_name=os.environ['BUCKET_NAME'], key=os.environ['CACHE']+'/repo_cache')
     f_index_obj.put(Body=str(json.dumps(cache)))
 
     repo.remove_package(pkg_id)    

@@ -19,6 +19,7 @@ class SubFunctionsTest(unittest.TestCase):
         os.environ['GPG_KEY'] = ''
         os.environ['PUBLIC'] = 'True'
         os.environ['GPG_PASS']='123'
+        os.environ['CACHE']='test_s3rpm'
     
     def tearDown(self):
         if os.path.exists('test_s3rpm'):
@@ -137,6 +138,7 @@ class HandlerTest(unittest.TestCase):
         os.environ['GPG_KEY'] = ''
         os.environ['PUBLIC'] = 'True'
         os.environ['GPG_PASS']='123'
+        os.environ['CACHE']='test_s3rpm'
         self.m = mock_open(read_data='')
 
     def tearDown(self):

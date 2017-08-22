@@ -53,7 +53,7 @@ Here is a minimal requirement for the policy that is included in role:
 ```
 {"Version": "2012-10-17",
     "Statement": [
-        {"Sid": "<THIS IS UNIQE>",
+        {"Sid": "<THIS IS UNIQUE>",
             "Action": [
                 "s3:GetObject",
                 "s3:PutObject",
@@ -72,6 +72,7 @@ These are the environmental variables you will have to set:
 | GPG_PASS | GPG key password |
 | BUCKET_NAME | Bucket Name |
 | REPO_DIR | Directory |
+| CACHE | Directory |
 
 **PUBLIC** Set to True for the outputs to be publicly readable
 
@@ -82,6 +83,8 @@ These are the environmental variables you will have to set:
 **BUCKET_NAME** Name of the bucket. Should be the same as the one selected in triggers and the one you're using for repository
 
 **REPO_DIR** Path to repositroy from bucket root. If none is set, it is assumed root of repository is root of the bucket
+
+**CACHE**  Path to cache folder from bucket root (e.g. repo/cache)
 
 ### Set up lambda with CLI
 
@@ -96,7 +99,7 @@ aws lambda create-function \
     --handler s3rpm.lambda_handler \
     --runtime python3.6 \
 # Replace '<...>' with environmental variables
-    --environment Variables='{PUBLIC=<bool>, GPG_KEY=<file>, GPG_PASS=<password>, BUCKET_NAME=<bucket name>, REPO_DIR=<dir>}'
+    --environment Variables='{PUBLIC=<bool>, GPG_KEY=<file>, GPG_PASS=<password>, BUCKET_NAME=<bucket name>, REPO_DIR=<dir>, CACHE=<dir>}'
 ```
 
 ### Set up lambda manually
